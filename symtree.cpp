@@ -5,10 +5,12 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <deque>
 #include <string>
 #include <map>
 #include <set>
 #include <assert.h>
+#include <algorithm>
 
 #include "distorm/include/distorm.h"
 
@@ -449,8 +451,47 @@ void print_symbol(IDiaSymbol * sym)
 	print_symbol_impl(ctx, sym, 0);
 }
 
+void print_help(char const * argv0)
+{
+	std::cout <<
+		"usage: " << argv0 << " <filename>\n";
+}
+
 int _main(int argc, char *argv[])
 {
+	std::string input_fname;
+	bool help = false;
+	for (int i = 1; i < argc; ++i)
+	{
+		std::string arg = argv[i];
+		if (arg == "-h" || arg == "--help")
+		{
+			help = true;
+		}
+		else
+		{
+			if (!input_fname.empty())
+			{
+				std::cerr << "error: multiple input files\n";
+				return 2;
+			}
+
+			input_fname = std::move(arg);
+		}
+	}
+
+	if (help)
+	{
+		print_help(argv[0]);
+		return 0;
+	}
+
+	if (input_fname.empty())
+	{
+		std::cerr << "error: no input files\n";
+		return 2;
+	}
+
 	std::ifstream fin(argv[1], std::ios::binary);
 	istream_file fin_file(fin);
 
@@ -489,7 +530,7 @@ int _main(int argc, char *argv[])
 	CComPtr<IDiaSymbol> global_scope;
 	hrchk session->get_globalScope(&global_scope);
 
-	print_symbol(global_scope);
+	//print_symbol(global_scope);
 
 	CComPtr<IDiaEnumSymbols> sym_enum;
 	hrchk global_scope->findChildrenEx(SymTagFunction, NULL, nsNone, &sym_enum);
@@ -499,6 +540,7 @@ int _main(int argc, char *argv[])
 		uint64_t start_addr;
 		uint64_t end_addr;
 		std::string name;
+		uint64_t reachable_size;
 		std::set<func_node_t *> callees;
 	};
 
@@ -580,104 +622,49 @@ int _main(int argc, char *argv[])
 		}
 	}
 
-	return 0;
-
-	std::map<uint32_t, CComPtr<IDiaSymbol>> syms;
-	std::set<uint32_t> open_set, closed_set;
-
-	auto reference = [&](uint64_t addr) {
-		CComPtr<IDiaSymbol> sym;
-		hrchk session->findSymbolByVA(addr, SymTagFunction, &sym);
-
-		if (!sym)
-			return;
-
-		CComBSTR name;
-		sym->get_name(&name);
-//		std::wcout << " " << (wchar_t const *)name;
-
-		DWORD id;
-		hrchk sym->get_symIndexId(&id);
-
-		if (syms.find(id) == syms.end())
-		{
-/*			CComBSTR name;
-			sym->get_name(&name);
-
-			uint64_t va;
-			hrchk sym->get_virtualAddress(&va);
-
-
-//			std::wcout << va << " " << id << " " << (wchar_t const *)name << std::endl;*/
-			syms[id] = sym;
-			open_set.insert(id);
-		}
-	};
-
-	reference(pe.entry());
-
-	while (!open_set.empty())
+	for (auto && kv: funcs)
 	{
-		uint32_t fun_id = *open_set.begin();
-		CComPtr<IDiaSymbol> const & fun = syms[fun_id];
-
-		closed_set.insert(fun_id);
-		open_set.erase(open_set.begin());
-
-		CComBSTR name;
-		fun->get_name(&name);
-
-		uint64_t addr;
-		fun->get_virtualAddress(&addr);
-		std::wcout << "******* " << (void *)addr << " " << fun_id << " " << (wchar_t const *)name << std::endl;
-
-		uint64_t size;
-		hrchk fun->get_length(&size);
-
-		buf.resize(size);
-		pe.load(addr, buf.data(), size);
-
-		_CodeInfo ci = {};
-		ci.code = buf.data();
-		ci.nextOffset = ci.codeOffset = addr;
-		ci.codeLen = buf.size();
-		ci.dt = Decode32Bits;
-
-		while (ci.codeLen)
+		std::set<func_node_t *> visited = { &kv.second };
+		std::deque<func_node_t *> q = { &kv.second };
+		while (!q.empty())
 		{
-			_DInst insts[16];
-			unsigned int used_insts;
-			distorm_decompose(&ci, insts, 16, &used_insts);
+			auto cur = q.front();
+			q.pop_front();
 
-			ci.codeLen -= ci.nextOffset - ci.codeOffset;
-			ci.code += ci.nextOffset - ci.codeOffset;
-			ci.codeOffset = ci.nextOffset;
-
-			for (size_t i = 0; i < used_insts; ++i)
+			for (auto callee: cur->callees)
 			{
-				_DInst const & inst = insts[i];
-//				std::cout << (void *)inst.addr;
-				for (auto && op: inst.ops)
-				{
-					switch (op.type)
-					{
-					case O_IMM:
-//						std::cout << " " << (void *)inst.imm.sqword;
-						reference(inst.imm.sqword);
-						break;
-					case O_PC:
-//						std::cout << " " << (void *)(inst.imm.addr + inst.addr + inst.size);
-						reference(inst.imm.addr + inst.addr + inst.size);
-						break;
-					case O_PTR:
-//						std::cout << " " << (void *)(inst.imm.ptr.off);
-						reference(inst.imm.ptr.off);
-						break;
-					}
-				}
-				//std::cout << '\n';
+				if (visited.find(callee) != visited.end())
+					continue;
+				visited.insert(callee);
+				q.push_back(callee);
 			}
 		}
+
+		uint64_t total_size = 0;
+		for (auto fn: visited)
+			total_size += (fn->end_addr - fn->start_addr);
+		kv.second.reachable_size = total_size;
+	}
+
+	std::vector<func_node_t *> sorted_funcs;
+	for (auto && kv: funcs)
+		sorted_funcs.push_back(&kv.second);
+	std::sort(sorted_funcs.begin(), sorted_funcs.end(), [](auto lhs, auto rhs) {
+		return lhs->reachable_size > rhs->reachable_size;
+	});
+
+	for (auto && func: sorted_funcs)
+	{
+		std::cout << std::hex << func->start_addr << " " << func->name << " " << std::dec << (func->end_addr - func->start_addr) << " " << func->reachable_size << "\n";
+
+		std::vector<func_node_t *> callees;
+		callees.assign(func->callees.begin(), func->callees.end());
+		std::sort(callees.begin(), callees.end(), [](auto lhs, auto rhs) {
+			return lhs->reachable_size > rhs->reachable_size;
+		});
+
+		for (auto && callee: callees)
+			std::cout << "    " << std::hex << callee->start_addr << " " <<  std::dec << (callee->end_addr - callee->start_addr) << " " << callee->reachable_size << " " << callee->name << "\n";
 	}
 
 	return 0;
