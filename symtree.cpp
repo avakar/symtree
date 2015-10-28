@@ -28,6 +28,7 @@ void print_help(char const * argv0)
 int _main(int argc, char *argv[])
 {
 	std::string input_fname;
+	bool print_syms = false;
 	bool help = false;
 	for (int i = 1; i < argc; ++i)
 	{
@@ -35,6 +36,10 @@ int _main(int argc, char *argv[])
 		if (arg == "-h" || arg == "--help")
 		{
 			help = true;
+		}
+		else if (arg == "--print-syms")
+		{
+			print_syms = true;
 		}
 		else
 		{
@@ -74,6 +79,12 @@ int _main(int argc, char *argv[])
 	else
 	{
 		mod = load_pe(input_fname, fin_file);
+	}
+
+	if (print_syms)
+	{
+		mod.sym_printer(std::cout);
+		return 0;
 	}
 
 	struct sym_node_t

@@ -128,30 +128,39 @@ module load_pe(std::string const & fname, file & fin)
 	CComPtr<IDiaSymbol> global_scope;
 	hrchk session->get_globalScope(&global_scope);
 
-	CComPtr<IDiaEnumSymbols> sym_enum;
-	hrchk global_scope->findChildrenEx(SymTagFunction, NULL, nsNone, &sym_enum);
-
 	module m;
-	for (;;)
-	{
-		CComPtr<IDiaSymbol> child;
-		ULONG cnt;
-		if (!(hrchk sym_enum->Next(1, &child, &cnt)))
-			break;
+	auto enum_syms = [&](enum SymTagEnum tag, module::type_t type) {
+		CComPtr<IDiaEnumSymbols> sym_enum;
+		hrchk global_scope->findChildrenEx(tag, NULL, nsNone, &sym_enum);
 
-		CComBSTR name;
-		hrchk child->get_name(&name);
+		for (;;)
+		{
+			CComPtr<IDiaSymbol> child;
+			ULONG cnt;
+			if (!(hrchk sym_enum->Next(1, &child, &cnt)))
+				break;
 
-		module::sym sym;
-		sym.name = to_utf8(name);
-		hrchk child->get_virtualAddress(&sym.addr);
-		hrchk child->get_length(&sym.size);
-		sym.type = module::type_t::function;
+			CComBSTR name;
+			hrchk child->get_name(&name);
 
-		m.syms[sym.addr] = std::move(sym);
-	}
+			module::sym sym;
+			sym.name = to_utf8(name);
+			hrchk child->get_virtualAddress(&sym.addr);
+			hrchk child->get_length(&sym.size);
+			sym.type = type;
+
+			m.syms[sym.addr] = std::move(sym);
+		}
+	};
+
+	enum_syms(SymTagFunction, module::type_t::function);
+	enum_syms(SymTagData, module::type_t::data);
 
 	m.arch = module::arch_t::x86;
 	m.loader = loader;
+	m.sym_printer = [global_scope](std::ostream & out) {
+		void pe_print_symbols(std::ostream & out, IDiaSymbol * sym);
+		pe_print_symbols(out, global_scope);
+	};
 	return m;
 }

@@ -296,7 +296,7 @@ void print_symbol_impl(print_symbol_ctx_t & ctx, IDiaSymbol * sym, size_t indent
 	}
 }
 
-void print_symbol(std::ostream & out, IDiaSymbol * sym)
+void pe_print_symbols(std::ostream & out, IDiaSymbol * sym)
 {
 	print_symbol_ctx_t ctx = { out };
 	print_symbol_impl(ctx, sym, 0);
