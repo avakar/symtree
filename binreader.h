@@ -11,6 +11,33 @@ struct bin_reader
 	}
 
 	template <typename T>
+	static T load_le(uint8_t const * p)
+	{
+		T res;
+		memcpy(&res, p, sizeof(T));
+		return res;
+	}
+
+	template <typename T>
+	static T load_be(uint8_t const * p)
+	{
+		T res;
+		auto q = reinterpret_cast<uint8_t *>(&res) + sizeof(T);
+		for (size_t i = 0; i < sizeof(T); ++i)
+			*--q = *p++;
+		return res;
+	}
+
+	template <typename T>
+	static T load(uint8_t const * p, bool be)
+	{
+		if (be)
+			return load_be<T>(p);
+		else
+			return load_le<T>(p);
+	}
+
+	template <typename T>
 	T read()
 	{
 		T res;
@@ -21,12 +48,10 @@ struct bin_reader
 	template <typename T>
 	void read(T & value)
 	{
-		uint8_t * first = reinterpret_cast<uint8_t *>(&value);
-		uint8_t * last = first + sizeof(T);
-		m_f.read(m_offset, first, last - first);
-		m_offset += last - first;
-		if (m_be)
-			std::reverse(first, last);
+		uint8_t buf[sizeof(T)];
+		m_f.read(m_offset, buf, sizeof(T));
+		m_offset += sizeof(T);
+		value = load<T>(buf, m_be);
 	}
 
 	template <typename T, size_t N>

@@ -17,6 +17,7 @@
 #include "distorm/include/distorm.h"
 
 #include "module.h"
+#include "binreader.h"
 
 void print_help(char const * argv0)
 {
@@ -75,47 +76,79 @@ int _main(int argc, char *argv[])
 		mod = load_pe(input_fname, fin_file);
 	}
 
-	struct func_node_t
+	struct sym_node_t
 	{
-		func_node_t()
+		sym_node_t()
 			: sym(nullptr), reachable_size(0)
 		{
 		}
 
 		module::sym * sym;
 		uint64_t reachable_size;
-		std::set<func_node_t *> callees;
+		std::set<sym_node_t *> callees;
 	};
 
-	std::map<uint64_t, func_node_t> funcs;
+	std::map<uint64_t, sym_node_t> syms;
 	for (auto && sym: mod.syms)
 	{
 		if (sym.second.size != 0)
-			funcs[sym.first].sym = &sym.second;
+			syms[sym.first].sym = &sym.second;
 	}
 
 	std::vector<uint8_t> buf;
-	for (auto && kv: funcs)
+	for (auto && kv: syms)
 	{
-		func_node_t & fn = kv.second;
+		sym_node_t & sym = kv.second;
 		auto reference = [&](uint64_t addr) {
-			auto it = funcs.upper_bound(addr);
-			if (it == funcs.begin())
+			auto it = syms.upper_bound(addr);
+			if (it == syms.begin())
 				return;
 			--it;
-			func_node_t & callee = it->second;
+			sym_node_t & callee = it->second;
 			if (callee.sym->addr > addr || addr >= callee.sym->addr + callee.sym->size)
 				return;
-			if (&callee != &fn)
-				fn.callees.insert(&callee);
+			if (&callee != &sym)
+				sym.callees.insert(&callee);
 		};
 
-		buf.resize(fn.sym->size);
-		mod.loader->read(fn.sym->addr, buf.data(), fn.sym->size);
+		buf.resize(sym.sym->size);
+		mod.loader->read(sym.sym->addr, buf.data(), sym.sym->size);
+
+		if (sym.sym->type == module::type_t::data)
+		{
+			switch (mod.arch)
+			{
+			case module::arch_t::x86:
+				if (sym.sym->addr % 4 == 0 && sym.sym->size % 4 == 0)
+				{
+					size_t cnt = buf.size() / 4;
+					uint8_t const * p = buf.data();
+					for (size_t i = 0; i < cnt; ++i)
+					{
+						reference(bin_reader::load_le<uint32_t>(p));
+						p += 4;
+					}
+				}
+				break;
+			case module::arch_t::x86_64:
+				if (sym.sym->addr % 8 == 0 && sym.sym->size % 8 == 0)
+				{
+					size_t cnt = buf.size() / 8;
+					uint8_t const * p = buf.data();
+					for (size_t i = 0; i < cnt; ++i)
+					{
+						reference(bin_reader::load_le<uint64_t>(p));
+						p += 8;
+					}
+				}
+				break;
+			}
+			continue;
+		}
 
 		_CodeInfo ci = {};
 		ci.code = buf.data();
-		ci.nextOffset = ci.codeOffset = fn.sym->addr;
+		ci.nextOffset = ci.codeOffset = sym.sym->addr;
 		ci.codeLen = buf.size();
 		switch (mod.arch)
 		{
@@ -161,10 +194,10 @@ int _main(int argc, char *argv[])
 		}
 	}
 
-	for (auto && kv: funcs)
+	for (auto && kv: syms)
 	{
-		std::set<func_node_t *> visited = { &kv.second };
-		std::deque<func_node_t *> q = { &kv.second };
+		std::set<sym_node_t *> visited = { &kv.second };
+		std::deque<sym_node_t *> q = { &kv.second };
 		while (!q.empty())
 		{
 			auto cur = q.front();
@@ -185,18 +218,18 @@ int _main(int argc, char *argv[])
 		kv.second.reachable_size = total_size;
 	}
 
-	std::vector<func_node_t *> sorted_funcs;
-	for (auto && kv: funcs)
-		sorted_funcs.push_back(&kv.second);
-	std::sort(sorted_funcs.begin(), sorted_funcs.end(), [](auto lhs, auto rhs) {
+	std::vector<sym_node_t *> sorted_syms;
+	for (auto && kv: syms)
+		sorted_syms.push_back(&kv.second);
+	std::sort(sorted_syms.begin(), sorted_syms.end(), [](auto lhs, auto rhs) {
 		return lhs->reachable_size > rhs->reachable_size;
 	});
 
-	for (auto && func: sorted_funcs)
+	for (auto && func: sorted_syms)
 	{
 		std::cout << std::hex << func->sym->addr << " " << func->sym->name << " " << std::dec << func->sym->size << " " << func->reachable_size << "\n";
 
-		std::vector<func_node_t *> callees;
+		std::vector<sym_node_t *> callees;
 		callees.assign(func->callees.begin(), func->callees.end());
 		std::sort(callees.begin(), callees.end(), [](auto lhs, auto rhs) {
 			return lhs->reachable_size > rhs->reachable_size;

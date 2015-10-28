@@ -9,11 +9,18 @@
 
 struct module
 {
+	enum class type_t
+	{
+		data,
+		function,
+	};
+
 	struct sym
 	{
 		std::string name;
 		uint64_t addr;
 		uint64_t size;
+		type_t type;
 	};
 
 	enum class arch_t

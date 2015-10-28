@@ -146,6 +146,7 @@ module load_pe(std::string const & fname, file & fin)
 		sym.name = to_utf8(name);
 		hrchk child->get_virtualAddress(&sym.addr);
 		hrchk child->get_length(&sym.size);
+		sym.type = module::type_t::function;
 
 		m.syms[sym.addr] = std::move(sym);
 	}

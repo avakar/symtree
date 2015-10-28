@@ -232,12 +232,15 @@ module load_elf(file & fin)
 				br.readx(sym.value);
 				br.readx(sym.size);
 
-				if ((sym.info & 0xf) == 2 /*STT_FUNC*/)
+				uint8_t type = (sym.info & 0xf);
+
+				if (type == 1 /*STT_OBJECT*/ || type == 2 /*STT_FUNC*/)
 				{
 					module::sym s;
 					s.name = sym.name;
 					s.addr = sym.value;
 					s.size = sym.size;
+					s.type = type == 1? module::type_t::data: module::type_t::function;
 					r.syms[s.addr] = std::move(s);
 				}
 
