@@ -1,4 +1,6 @@
 ## Quick start
+Download the tool from the [releases page][1].
+
 Pass a path to an executable file, either a Windows .exe (a PE file)
 or a Linux executable (an ELF file). The executable must be compiler
 for either x86 or amd64 platform. You need debug symbols either
@@ -23,6 +25,8 @@ However `foo` depends on even more functions (in this case,
 a constructor `B::B`). Put together, all dependencies of `main`
 take 409 bytes and with 61 bytes from `main` it needs 470 bytes
 in total.
+
+  [1]: https://github.com/avakar/symtree/releases
 
 ## Known limitations
  * Only x86 and amd64 binaries are supported.
