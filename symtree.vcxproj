@@ -151,12 +151,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="elf_module.cpp" />
+    <ClCompile Include="pe_module.cpp" />
+    <ClCompile Include="pe_sym_printer.cpp" />
     <ClCompile Include="symtree.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="cdistorm.vcxproj">
       <Project>{05e525e8-d8f9-436d-ab49-03d84de990c5}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="binreader.h" />
+    <ClInclude Include="file.h" />
+    <ClInclude Include="hrchk.h" />
+    <ClInclude Include="module.h" />
+    <ClInclude Include="utf.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

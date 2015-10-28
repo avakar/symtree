@@ -1,0 +1,37 @@
+#ifndef SYMTREE_MODULE_H
+#define SYMTREE_MODULE_H
+
+#include "file.h"
+#include <stdint.h>
+#include <map>
+#include <memory>
+#include <functional>
+
+struct module
+{
+	struct sym
+	{
+		std::string name;
+		uint64_t addr;
+		uint64_t size;
+	};
+
+	enum class arch_t
+	{
+		unknown,
+		x86,
+		x86_64,
+	};
+
+	arch_t arch;
+	std::shared_ptr<file> loader;
+	std::map<uint64_t, sym> syms;
+	std::function<void (std::ostream &)> sym_printer;
+};
+
+module load_elf(file & fin);
+module load_pe(std::string const & fname, file & fin);
+
+module load_autodetect(file & fin);
+
+#endif // SYMTREE_MODULE_H
