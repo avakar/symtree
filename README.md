@@ -14,10 +14,10 @@ It also prints the size of the symbol and the total size of itself and its depen
 
 For instance, in the following example, the function `main` calls function `foo`.
 
-    4007b0 main 61 470
-        40077d 51 409 _Z3fooi
-    40077d _Z3fooi 51 409
-        400804 50 358 _ZN1BC2Ei
+    004007b0 61 470 %root main
+        0040077d 51 409 _Z3fooi
+    0040077d 51 409 _Z3fooi
+        00400804 50 358 _ZN1BC2Ei
     ...
 
 Here, the function `main` is 61 bytes long, `foo` is 51 bytes long.

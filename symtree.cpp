@@ -97,6 +97,7 @@ int _main(int argc, char *argv[])
 		module::sym * sym;
 		uint64_t reachable_size;
 		std::set<sym_node_t *> callees;
+		std::set<sym_node_t *> callers;
 	};
 
 	std::map<uint64_t, sym_node_t> syms;
@@ -119,7 +120,10 @@ int _main(int argc, char *argv[])
 			if (callee.sym->addr > addr || addr >= callee.sym->addr + callee.sym->size)
 				return;
 			if (&callee != &sym)
+			{
 				sym.callees.insert(&callee);
+				callee.callers.insert(&sym);
+			}
 		};
 
 		buf.resize(sym.sym->size);
@@ -199,6 +203,9 @@ int _main(int argc, char *argv[])
 					case O_PTR:
 						reference(inst.imm.ptr.off);
 						break;
+					case O_SMEM:
+						if (inst.flags & FLAG_RIP_RELATIVE)
+							reference(INSTRUCTION_GET_RIP_TARGET(&inst));
 					}
 				}
 			}
@@ -238,7 +245,10 @@ int _main(int argc, char *argv[])
 
 	for (auto && func: sorted_syms)
 	{
-		std::cout << std::hex << func->sym->addr << " " << func->sym->name << " " << std::dec << func->sym->size << " " << func->reachable_size << "\n";
+		std::cout << std::hex << std::setw(8) << std::setfill('0') << func->sym->addr << " " << std::dec << func->sym->size << " " << func->reachable_size;
+		if (func->callers.empty())
+			std::cout << " %root";
+		std::cout << " " << func->sym->name << "\n";
 
 		std::vector<sym_node_t *> callees;
 		callees.assign(func->callees.begin(), func->callees.end());
@@ -247,9 +257,14 @@ int _main(int argc, char *argv[])
 		});
 
 		for (auto && callee: callees)
-			std::cout << "    " << std::hex << callee->sym->addr << " " <<  std::dec << callee->sym->size << " " << callee->reachable_size << " " << callee->sym->name << "\n";
+			std::cout << "    " << std::hex << std::setw(8) << std::setfill('0') << callee->sym->addr << " " <<  std::dec << callee->sym->size << " " << callee->reachable_size << " " << callee->sym->name << "\n";
 	}
 
+	size_t total_size = 0;
+	for (auto && sym: syms)
+		total_size += sym.second.sym->size;
+
+	std::cerr << "total symbol size: " << total_size << "\n";
 	return 0;
 }
 
