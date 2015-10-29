@@ -30,12 +30,24 @@ int _main(int argc, char *argv[])
 	std::string input_fname;
 	bool print_syms = false;
 	bool help = false;
+	enum class sort_kind { by_total, by_savings } sort = sort_kind::by_total;
 	for (int i = 1; i < argc; ++i)
 	{
 		std::string arg = argv[i];
 		if (arg == "-h" || arg == "--help")
 		{
 			help = true;
+		}
+		else if (arg == "--sort")
+		{
+			if (i + 1 == argc || (strcmp(argv[i+1], "total") != 0 && strcmp(argv[i+1], "savings") != 0))
+			{
+				std::cerr << "error: --sort expects one of 'total' or 'savings'\n";
+				return 2;
+			}
+
+			if (strcmp(argv[++i], "savings") == 0)
+				sort = sort_kind::by_savings;
 		}
 		else if (arg == "--print-syms")
 		{
@@ -53,16 +65,10 @@ int _main(int argc, char *argv[])
 		}
 	}
 
-	if (help)
+	if (help || input_fname.empty())
 	{
 		print_help(argv[0]);
 		return 0;
-	}
-
-	if (input_fname.empty())
-	{
-		std::cerr << "error: no input files\n";
-		return 2;
 	}
 
 	std::ifstream fin(input_fname, std::ios::binary);
@@ -96,16 +102,23 @@ int _main(int argc, char *argv[])
 
 		module::sym * sym;
 		uint64_t reachable_size;
+		uint64_t size_savings;
 		std::set<sym_node_t *> callees;
 		std::set<sym_node_t *> callers;
 	};
 
+	size_t total_size = 0;
 	std::map<uint64_t, sym_node_t> syms;
 	for (auto && sym: mod.syms)
 	{
 		if (sym.second.size != 0)
+		{
 			syms[sym.first].sym = &sym.second;
+			total_size += sym.second.size;
+		}
 	}
+
+	std::cerr << "total symbol size: " << total_size << "\n";
 
 	std::vector<uint8_t> buf;
 	for (auto && kv: syms)
@@ -212,6 +225,44 @@ int _main(int argc, char *argv[])
 		}
 	}
 
+	std::set<sym_node_t *> roots;
+	for (auto && kv: syms)
+	{
+		if (kv.second.callers.empty())
+			roots.insert(&kv.second);
+	}
+
+	for (auto && kv: syms)
+	{
+		sym_node_t & blacklist = kv.second;
+
+		std::set<sym_node_t *> visited = roots;
+		visited.erase(&blacklist);
+
+		std::deque<sym_node_t *> q(visited.begin(), visited.end());
+		while (!q.empty())
+		{
+			auto cur = q.front();
+			q.pop_front();
+
+			for (auto callee: cur->callees)
+			{
+				if (callee == &blacklist)
+					continue;
+
+				if (visited.find(callee) != visited.end())
+					continue;
+				visited.insert(callee);
+				q.push_back(callee);
+			}
+		}
+
+		size_t reduced_size = 0;
+		for (auto && sym: visited)
+			reduced_size += sym->sym->size;
+		blacklist.size_savings = total_size - reduced_size;
+	}
+
 	for (auto && kv: syms)
 	{
 		std::set<sym_node_t *> visited = { &kv.second };
@@ -236,35 +287,42 @@ int _main(int argc, char *argv[])
 		kv.second.reachable_size = total_size;
 	}
 
+	auto sort_syms = [&](std::vector<sym_node_t *> & syms) {
+		switch (sort)
+		{
+		case sort_kind::by_savings:
+			std::sort(syms.begin(), syms.end(), [](auto lhs, auto rhs) {
+				return lhs->size_savings > rhs->size_savings;
+			});
+			break;
+		case sort_kind::by_total:
+			std::sort(syms.begin(), syms.end(), [](auto lhs, auto rhs) {
+				return lhs->reachable_size > rhs->reachable_size;
+			});
+			break;
+		}
+	};
+
 	std::vector<sym_node_t *> sorted_syms;
 	for (auto && kv: syms)
 		sorted_syms.push_back(&kv.second);
-	std::sort(sorted_syms.begin(), sorted_syms.end(), [](auto lhs, auto rhs) {
-		return lhs->reachable_size > rhs->reachable_size;
-	});
+	sort_syms(sorted_syms);
 
 	for (auto && func: sorted_syms)
 	{
-		std::cout << std::hex << std::setw(8) << std::setfill('0') << func->sym->addr << " " << std::dec << func->sym->size << " " << func->reachable_size;
+		std::cout << std::hex << std::setw(8) << std::setfill('0') << func->sym->addr << " " << std::dec << func->sym->size << " " << func->reachable_size << " " << func->size_savings;
 		if (func->callers.empty())
 			std::cout << " %root";
 		std::cout << " " << func->sym->name << "\n";
 
 		std::vector<sym_node_t *> callees;
 		callees.assign(func->callees.begin(), func->callees.end());
-		std::sort(callees.begin(), callees.end(), [](auto lhs, auto rhs) {
-			return lhs->reachable_size > rhs->reachable_size;
-		});
+		sort_syms(callees);
 
 		for (auto && callee: callees)
-			std::cout << "    " << std::hex << std::setw(8) << std::setfill('0') << callee->sym->addr << " " <<  std::dec << callee->sym->size << " " << callee->reachable_size << " " << callee->sym->name << "\n";
+			std::cout << "    " << std::hex << std::setw(8) << std::setfill('0') << callee->sym->addr << " " <<  std::dec << callee->sym->size << " " << callee->reachable_size << " " << callee->size_savings << " " << callee->sym->name << "\n";
 	}
 
-	size_t total_size = 0;
-	for (auto && sym: syms)
-		total_size += sym.second.sym->size;
-
-	std::cerr << "total symbol size: " << total_size << "\n";
 	return 0;
 }
 
