@@ -22,7 +22,7 @@
 void print_help(char const * argv0)
 {
 	std::cout <<
-		"usage: " << argv0 << " <filename>\n";
+		"usage: " << argv0 << " [--sort {total|savings}] [--expand-saved] <filename>\n";
 }
 
 int _main(int argc, char *argv[])
@@ -31,6 +31,7 @@ int _main(int argc, char *argv[])
 	bool print_syms = false;
 	bool help = false;
 	enum class sort_kind { by_total, by_savings } sort = sort_kind::by_total;
+	bool expand_saved = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		std::string arg = argv[i];
@@ -48,6 +49,10 @@ int _main(int argc, char *argv[])
 
 			if (strcmp(argv[++i], "savings") == 0)
 				sort = sort_kind::by_savings;
+		}
+		else if (arg == "--expand-saved")
+		{
+			expand_saved = true;
 		}
 		else if (arg == "--print-syms")
 		{
@@ -105,16 +110,20 @@ int _main(int argc, char *argv[])
 		uint64_t size_savings;
 		std::set<sym_node_t *> callees;
 		std::set<sym_node_t *> callers;
+		std::set<sym_node_t *> saved;
 	};
 
 	size_t total_size = 0;
 	std::map<uint64_t, sym_node_t> syms;
+	std::set<sym_node_t *> all_syms;
 	for (auto && sym: mod.syms)
 	{
 		if (sym.second.size != 0)
 		{
-			syms[sym.first].sym = &sym.second;
+			auto & new_sym = syms[sym.first];
+			new_sym.sym = &sym.second;
 			total_size += sym.second.size;
+			all_syms.insert(&new_sym);
 		}
 	}
 
@@ -257,10 +266,11 @@ int _main(int argc, char *argv[])
 			}
 		}
 
-		size_t reduced_size = 0;
-		for (auto && sym: visited)
-			reduced_size += sym->sym->size;
-		blacklist.size_savings = total_size - reduced_size;
+		std::set_difference(all_syms.begin(), all_syms.end(), visited.begin(), visited.end(), std::inserter(blacklist.saved, blacklist.saved.begin()));
+
+		blacklist.size_savings = 0;
+		for (auto && sym: blacklist.saved)
+			blacklist.size_savings += sym->sym->size;
 	}
 
 	for (auto && kv: syms)
@@ -314,6 +324,17 @@ int _main(int argc, char *argv[])
 		if (func->callers.empty())
 			std::cout << " %root";
 		std::cout << " " << func->sym->name << "\n";
+
+		if (expand_saved)
+		{
+			std::vector<sym_node_t *> sorted_saved(func->saved.begin(), func->saved.end());
+			std::sort(sorted_saved.begin(), sorted_saved.end(), [](auto lhs, auto rhs) {
+				return lhs->sym->size > rhs->sym->size;
+			});
+
+			for (auto && saved: sorted_saved)
+				std::cout << "    " << std::hex << std::setw(8) << std::setfill('0') << saved->sym->addr << " " <<  std::dec << saved->sym->size << " " << saved->reachable_size << " " << saved->size_savings << " %saved " << saved->sym->name << "\n";
+		}
 
 		std::vector<sym_node_t *> callees;
 		callees.assign(func->callees.begin(), func->callees.end());
