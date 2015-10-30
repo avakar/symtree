@@ -130,6 +130,9 @@ module load_elf(file & fin)
 	case 3: // EM_386
 		r.arch = module::arch_t::x86;
 		break;
+	case 40: // EM_ARM
+		r.arch = module::arch_t::arm32;
+		break;
 	case 62: // EM_X86_64
 		r.arch = module::arch_t::x86_64;
 		break;
@@ -202,6 +205,7 @@ module load_elf(file & fin)
 		sec.name = string_table.data() + sec.nameidx;
 	}
 
+	size_t min_syment_size = elf64? 24: 16;
 
 	std::vector<elf_sym> syms;
 	for (auto && sec: sections)
@@ -209,43 +213,51 @@ module load_elf(file & fin)
 		if (sec.type != 2 /*SHT_SYMTAB*/)
 			continue;
 
-		if (elf64)
+		if (sec.entsize < min_syment_size)
+			throw std::runtime_error("invalid symbol entry size");
+
+		std::vector<char> const & strtab = get_string_table(sec.link);
+		size_t entry_count = sec.size / sec.entsize;
+
+		for (size_t i = 0; i < entry_count; ++i)
 		{
-			if (sec.entsize < 24)
-				throw std::runtime_error("invalid symbol entry size");
+			br.seek(sec.offset + i*sec.entsize);
 
-			std::vector<char> const & strtab = get_string_table(sec.link);
-			size_t entry_count = sec.size / sec.entsize;
-
-			for (size_t i = 0; i < entry_count; ++i)
+			elf_sym sym;
+			br.read(sym.nameidx);
+			if (sym.nameidx >= strtab.size())
+				throw std::runtime_error("invalid string table index");
+			sym.name = strtab.data() + sym.nameidx;
+			if (elf64)
 			{
-				br.seek(sec.offset + i*sec.entsize);
-
-				elf_sym sym;
-				br.read(sym.nameidx);
-				if (sym.nameidx >= strtab.size())
-					throw std::runtime_error("invalid string table index");
-				sym.name = strtab.data() + sym.nameidx;
 				br.read(sym.info);
 				br.read(sym.other);
 				br.read(sym.shndx);
 				br.readx(sym.value);
 				br.readx(sym.size);
-
-				uint8_t type = (sym.info & 0xf);
-
-				if (type == 1 /*STT_OBJECT*/ || type == 2 /*STT_FUNC*/)
-				{
-					module::sym s;
-					s.name = sym.name;
-					s.addr = sym.value;
-					s.size = sym.size;
-					s.type = type == 1? module::type_t::data: module::type_t::function;
-					r.syms[s.addr] = std::move(s);
-				}
-
-				syms.push_back(std::move(sym));
 			}
+			else
+			{
+				br.readx(sym.value);
+				br.readx(sym.size);
+				br.read(sym.info);
+				br.read(sym.other);
+				br.read(sym.shndx);
+			}
+
+			uint8_t type = (sym.info & 0xf);
+
+			if (type == 1 /*STT_OBJECT*/ || type == 2 /*STT_FUNC*/)
+			{
+				module::sym s;
+				s.name = sym.name;
+				s.addr = sym.value;
+				s.size = sym.size;
+				s.type = type == 1? module::type_t::data: module::type_t::function;
+				r.syms[s.addr] = std::move(s);
+			}
+
+			syms.push_back(std::move(sym));
 		}
 	}
 

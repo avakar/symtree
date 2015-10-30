@@ -28,6 +28,7 @@ struct module
 		unknown,
 		x86,
 		x86_64,
+		arm32,
 	};
 
 	arch_t arch;

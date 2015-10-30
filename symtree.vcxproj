@@ -129,6 +129,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="elf_module.cpp" />
+    <ClCompile Include="find_refs_arm32.cpp" />
+    <ClCompile Include="find_refs_x86.cpp" />
     <ClCompile Include="pe_module.cpp" />
     <ClCompile Include="pe_sym_printer.cpp" />
     <ClCompile Include="symtree.cpp" />
@@ -141,6 +143,7 @@
   <ItemGroup>
     <ClInclude Include="binreader.h" />
     <ClInclude Include="file.h" />
+    <ClInclude Include="find_refs.h" />
     <ClInclude Include="hrchk.h" />
     <ClInclude Include="module.h" />
     <ClInclude Include="utf.h" />

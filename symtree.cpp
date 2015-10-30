@@ -14,8 +14,7 @@
 #include <array>
 #include <memory>
 
-#include "distorm/include/distorm.h"
-
+#include "find_refs.h"
 #include "module.h"
 #include "binreader.h"
 
@@ -183,55 +182,21 @@ int _main(int argc, char *argv[])
 			continue;
 		}
 
-		_CodeInfo ci = {};
-		ci.code = buf.data();
-		ci.nextOffset = ci.codeOffset = sym.sym->addr;
-		ci.codeLen = buf.size();
 		switch (mod.arch)
 		{
 		case module::arch_t::x86:
-			ci.dt = Decode32Bits;
+			find_refs_x86(sym.sym->addr, /*x64=*/false, buf, reference);
 			break;
 		case module::arch_t::x86_64:
-			ci.dt = Decode64Bits;
+			find_refs_x86(sym.sym->addr, /*x64=*/true, buf, reference);
+			break;
+		case module::arch_t::arm32:
+			find_refs_arm32(sym.sym->addr, buf, reference);
 			break;
 		default:
 			throw std::runtime_error("unsupported architecture");
 		}
 
-		while (ci.codeLen)
-		{
-			_DInst insts[16];
-			unsigned int used_insts;
-			distorm_decompose(&ci, insts, 16, &used_insts);
-
-			ci.codeLen -= ci.nextOffset - ci.codeOffset;
-			ci.code += ci.nextOffset - ci.codeOffset;
-			ci.codeOffset = ci.nextOffset;
-
-			for (size_t i = 0; i < used_insts; ++i)
-			{
-				_DInst const & inst = insts[i];
-				for (auto && op: inst.ops)
-				{
-					switch (op.type)
-					{
-					case O_IMM:
-						reference(inst.imm.sqword);
-						break;
-					case O_PC:
-						reference(inst.imm.addr + inst.addr + inst.size);
-						break;
-					case O_PTR:
-						reference(inst.imm.ptr.off);
-						break;
-					case O_SMEM:
-						if (inst.flags & FLAG_RIP_RELATIVE)
-							reference(INSTRUCTION_GET_RIP_TARGET(&inst));
-					}
-				}
-			}
-		}
 	}
 
 	std::set<sym_node_t *> roots;
