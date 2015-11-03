@@ -288,7 +288,10 @@ int _main(int argc, char *argv[])
 		std::cout << std::hex << std::setw(8) << std::setfill('0') << func->sym->addr << " " << std::dec << func->sym->size << " " << func->reachable_size << " " << func->size_savings;
 		if (func->callers.empty())
 			std::cout << " %root";
-		std::cout << " " << func->sym->name << "\n";
+		std::cout << " " << func->sym->name;
+		if (!func->sym->fname.empty())
+			std::cout << " " << func->sym->fname << ":" << func->sym->lineno;
+		std::cout << "\n";
 
 		if (expand_saved)
 		{

@@ -21,6 +21,9 @@ struct module
 		uint64_t addr;
 		uint64_t size;
 		type_t type;
+
+		std::string fname;
+		int32_t lineno;
 	};
 
 	enum class arch_t

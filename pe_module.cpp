@@ -149,6 +149,25 @@ module load_pe(std::string const & fname, file & fin)
 			hrchk child->get_length(&sym.size);
 			sym.type = type;
 
+			CComPtr<IDiaEnumLineNumbers> linenos;
+			hrchk session->findLinesByVA(sym.addr, sym.size, &linenos);
+
+			CComPtr<IDiaLineNumber> lineno;
+			ULONG fetched;
+			if (hrchk linenos->Next(1, &lineno, &fetched))
+			{
+				DWORD lno;
+				hrsok lineno->get_lineNumber(&lno);
+				sym.lineno = lno;
+
+				CComPtr<IDiaSourceFile> srcfile;
+				hrchk lineno->get_sourceFile(&srcfile);
+
+				CComBSTR fname;
+				hrchk srcfile->get_fileName(&fname);
+				sym.fname = to_utf8(fname);
+			}
+
 			m.syms[sym.addr] = std::move(sym);
 		}
 	};
