@@ -1,7 +1,7 @@
 #include "find_refs.h"
 #include "distorm/include/distorm.h"
 
-void find_refs_x86(size_t addr, bool x64, std::vector<uint8_t> const & buf, std::function<void(size_t addr)> const & cb)
+void find_refs_x86(uint64_t addr, bool x64, std::vector<uint8_t> const & buf, std::function<void(uint64_t addr)> const & cb)
 {
 	_CodeInfo ci = {};
 	ci.code = buf.data();
@@ -14,6 +14,8 @@ void find_refs_x86(size_t addr, bool x64, std::vector<uint8_t> const & buf, std:
 		_DInst insts[16];
 		unsigned int used_insts;
 		distorm_decompose(&ci, insts, 16, &used_insts);
+		if (ci.nextOffset == ci.codeOffset)
+			break;
 
 		ci.codeLen -= ci.nextOffset - ci.codeOffset;
 		ci.code += ci.nextOffset - ci.codeOffset;

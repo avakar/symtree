@@ -60,7 +60,7 @@ struct pe_file
 			m_image_base = br.read<uint32_t>();
 			break;
 		case 0x20b:
-			br.skip(26);
+			br.skip(22);
 			m_image_base = br.read<uint64_t>();
 			break;
 		default:
@@ -175,7 +175,7 @@ module load_pe(std::string const & fname, file & fin)
 	enum_syms(SymTagFunction, module::type_t::function);
 	enum_syms(SymTagData, module::type_t::data);
 
-	m.arch = module::arch_t::x86;
+	m.arch = loader->m_arch;
 	m.loader = loader;
 	m.sym_printer = [global_scope](std::ostream & out) {
 		void pe_print_symbols(std::ostream & out, IDiaSymbol * sym);

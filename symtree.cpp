@@ -31,6 +31,7 @@ int _main(int argc, char *argv[])
 	bool help = false;
 	enum class sort_kind { by_total, by_savings } sort = sort_kind::by_total;
 	bool expand_saved = false;
+	bool compute_savings = false;
 	for (int i = 1; i < argc; ++i)
 	{
 		std::string arg = argv[i];
@@ -52,6 +53,10 @@ int _main(int argc, char *argv[])
 		else if (arg == "--expand-saved")
 		{
 			expand_saved = true;
+		}
+		else if (arg == "--compute-savings")
+		{
+			compute_savings = true;
 		}
 		else if (arg == "--print-syms")
 		{
@@ -121,6 +126,7 @@ int _main(int argc, char *argv[])
 		{
 			auto & new_sym = syms[sym.first];
 			new_sym.sym = &sym.second;
+			new_sym.size_savings = 0;
 			total_size += sym.second.size;
 			all_syms.insert(&new_sym);
 		}
@@ -206,36 +212,39 @@ int _main(int argc, char *argv[])
 			roots.insert(&kv.second);
 	}
 
-	for (auto && kv: syms)
+	if (compute_savings)
 	{
-		sym_node_t & blacklist = kv.second;
-
-		std::set<sym_node_t *> visited = roots;
-		visited.erase(&blacklist);
-
-		std::deque<sym_node_t *> q(visited.begin(), visited.end());
-		while (!q.empty())
+		for (auto && kv: syms)
 		{
-			auto cur = q.front();
-			q.pop_front();
+			sym_node_t & blacklist = kv.second;
 
-			for (auto callee: cur->callees)
+			std::set<sym_node_t *> visited = roots;
+			visited.erase(&blacklist);
+
+			std::deque<sym_node_t *> q(visited.begin(), visited.end());
+			while (!q.empty())
 			{
-				if (callee == &blacklist)
-					continue;
+				auto cur = q.front();
+				q.pop_front();
 
-				if (visited.find(callee) != visited.end())
-					continue;
-				visited.insert(callee);
-				q.push_back(callee);
+				for (auto callee: cur->callees)
+				{
+					if (callee == &blacklist)
+						continue;
+
+					if (visited.find(callee) != visited.end())
+						continue;
+					visited.insert(callee);
+					q.push_back(callee);
+				}
 			}
+
+			std::set_difference(all_syms.begin(), all_syms.end(), visited.begin(), visited.end(), std::inserter(blacklist.saved, blacklist.saved.begin()));
+
+			blacklist.size_savings = 0;
+			for (auto && sym: blacklist.saved)
+				blacklist.size_savings += sym->sym->size;
 		}
-
-		std::set_difference(all_syms.begin(), all_syms.end(), visited.begin(), visited.end(), std::inserter(blacklist.saved, blacklist.saved.begin()));
-
-		blacklist.size_savings = 0;
-		for (auto && sym: blacklist.saved)
-			blacklist.size_savings += sym->sym->size;
 	}
 
 	for (auto && kv: syms)
